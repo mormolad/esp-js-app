@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dht22</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px; background: #111; color: #eee; }
+    h1 { font-size: 20px; font-weight: 600; }
+    p { color: #aaa; }
+    .val { font-size: 42px; margin: 8px 0 20px; }
+    button { font-size: 18px; padding: 12px 16px; }
+  </style>
+</head>
+<body>
+  <h1>Датчик DHT22</h1>
+  <p>Сеть dht22, адрес 192.168.4.1. Интернет не нужен.</p>
+  <div>Температура</div>
+  <div class="val" id="t">нет данных</div>
+  <div>Влажность</div>
+  <div class="val" id="h">нет данных</div>
+  <button id="back" type="button">К роутеру</button>
+  <p id="status"></p>
+  <script>
+    function text(v, unit) {
+      if (v === null || v === undefined || v !== v) return 'нет данных';
+      return Number(v).toFixed(1) + ' ' + unit;
+    }
+
+    function poll() {
+      fetch('/sensor').then(function(res) { return res.json(); }).then(function(data) {
+        document.getElementById('t').textContent = text(data.t, '°C');
+        document.getElementById('h').textContent = text(data.h, '%');
+      });
+    }
+
+    poll();
+    setInterval(poll, 2000);
+
+    document.getElementById('back').onclick = function() {
+      document.getElementById('status').textContent = 'Перезагрузка. Подключитесь к роутеру.';
+      fetch('/back', { method: 'POST' });
+    };
+  </script>
+</body>
+</html>

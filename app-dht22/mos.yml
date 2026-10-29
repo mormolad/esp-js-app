@@ -1,0 +1,52 @@
+author: mongoose-os
+description: DHT22 + MQTT + Web UI (settings in mos.yml)
+version: 1.0
+manifest_version: 2017-09-29
+
+libs_version: ${mos.version}
+modules_version: ${mos.version}
+mongoose_os_version: ${mos.version}
+
+tags:
+  - js
+
+sources:
+  - src
+
+filesystem:
+  - fs
+
+libs:
+  - origin: https://github.com/mongoose-os-libs/boards
+  - origin: https://github.com/mongoose-os-libs/ca-bundle
+  - origin: https://github.com/mongoose-os-libs/rpc-service-config
+  - origin: https://github.com/mongoose-os-libs/rpc-service-fs
+  - origin: https://github.com/mongoose-os-libs/rpc-uart
+  - origin: https://github.com/mongoose-os-libs/js-demo-bundle
+  - origin: https://github.com/mongoose-os-libs/dht
+  - origin: https://github.com/mongoose-os-libs/mqtt
+
+# ===== НАСТРОЙКИ WI-FI И MQTT (зашиты в прошивку) =====
+config_schema:
+  # Wi-Fi: режим клиента (подключение к роутеру)
+  - ["wifi.sta.enable", true]
+  - ["wifi.sta.ssid", "CCF9"]                    # ← Имя вашей Wi-Fi сети
+  - ["wifi.sta.pass", "cTo8BP6F11111112"]     # ← Пароль от Wi-Fi
+  - ["wifi.ap.enable", false]
+  - ["wifi.ap.ssid", "dht22"]
+  - ["wifi.ap.pass", ""]
+  # Пустой index_files в http-server не открывает index.html на /
+  - ["http.index_files", "index.html"]
+
+  # MQTT
+  - ["mqtt.enable", true]
+  - ["mqtt.server", "tcp://89.125.28.27:1883"]  # ← Адрес вашего MQTT брокера
+  - ["mqtt.user", "temphum"]                            # Логин (если нужен)
+  - ["mqtt.pass", "cto8bp6f+CTO8BP6F"]                            # Пароль (если нужен)
+  - ["mqtt.client_id", "esp8266_dht22"]          # ID устройства в MQTT
+  - ["mqtt.reconnect_timeout_min", 2]
+  - ["mqtt.reconnect_timeout_max", 60]
+
+  # Отключаем AWS shadow (не нужен, экономит память)
+  - ["aws.shadow.enable", false]
+  - ["app.pin", "i", 2, {title: "GPIO pin a sensor is attached to"}]

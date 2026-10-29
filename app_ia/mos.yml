@@ -1,0 +1,24 @@
+author: mongoose-os
+description: ESP32 hello world every 1s
+version: 1.0
+arch: esp32
+
+libs_version: ${mos.version}
+modules_version: ${mos.version}
+mongoose_os_version: ${mos.version}
+
+tags:
+  - js
+
+sources:
+  - src
+
+filesystem:
+  - fs
+
+libs:
+  - origin: https://github.com/mongoose-os-libs/boards
+  - origin: https://github.com/mongoose-os-libs/mjs
+  - origin: https://github.com/mongoose-os-libs/rpc-uart
+
+manifest_version: 2017-09-29
