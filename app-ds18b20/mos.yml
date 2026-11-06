@@ -1,7 +1,7 @@
 author: mongoose-os
 description: DS18B20 (несколько на одной шине) + MQTT (C), настройка WiFi/MQTT через WiFi AP
 version: 1.0
-arch: esp32
+#arch: esp32
 manifest_version: 2017-09-29
 
 libs_version: ${mos.version}
