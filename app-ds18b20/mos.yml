@@ -1,14 +1,12 @@
 author: mongoose-os
-description: DS18B20 + MQTT + Web UI (settings in mos.yml)
+description: DS18B20 (несколько на одной шине) + MQTT (C), настройка WiFi/MQTT через WiFi AP
 version: 1.0
+arch: esp32
 manifest_version: 2017-09-29
 
 libs_version: ${mos.version}
 modules_version: ${mos.version}
 mongoose_os_version: ${mos.version}
-
-tags:
-  - js
 
 sources:
   - src
@@ -19,31 +17,38 @@ filesystem:
 libs:
   - origin: https://github.com/mongoose-os-libs/boards
   - origin: https://github.com/mongoose-os-libs/ca-bundle
+  - origin: https://github.com/mongoose-os-libs/http-server
+  - origin: https://github.com/mongoose-os-libs/mqtt
   - origin: https://github.com/mongoose-os-libs/rpc-service-config
   - origin: https://github.com/mongoose-os-libs/rpc-service-fs
   - origin: https://github.com/mongoose-os-libs/rpc-uart
-  - origin: https://github.com/mongoose-os-libs/js-demo-bundle
-  - origin: https://github.com/mongoose-os-libs/mqtt
-  - origin: https://github.com/mongoose-os-libs/ds18b20
+  - origin: https://github.com/mongoose-os-libs/onewire
 
 config_schema:
-  - ["wifi.sta.enable", true]
-  - ["wifi.sta.ssid", "CCF9"]
-  - ["wifi.sta.pass", "cTo8BP6F11111112"]
-  - ["wifi.ap.enable", false]
+  # Свежее устройство поднимает только точку доступа.
+  # Параметры роутера и MQTT задаются с веб-страницы 192.168.4.1 и сохраняются в flash.
+  - ["wifi.sta.enable", false]
+  - ["wifi.ap.enable", true]
   - ["wifi.ap.ssid", "ds18b20"]
-  - ["wifi.ap.pass", "ds18b20"]
+  - ["wifi.ap.pass", ""]
   - ["http.index_files", "index.html"]
+  - ["http.max_request_size", 4096]
 
-  - ["mqtt.enable", true]
-  - ["mqtt.server", "tcp://89.125.28.27:1883"]
-  - ["mqtt.user", "temphum"]
-  - ["mqtt.pass", "cto8bp6f+CTO8BP6F"]
-  - ["mqtt.client_id", "esp8266_ds18b20"]
-  - ["mqtt.reconnect_timeout_min", 2]
+  - ["mqtt.enable", false]
+  - ["mqtt.server", ""]
+  - ["mqtt.user", ""]
+  - ["mqtt.pass", ""]
+  - ["mqtt.reconnect_timeout_min", 5]
   - ["mqtt.reconnect_timeout_max", 60]
+  - ["mqtt.max_qos", 1]
+
+  - ["sntp.enable", true]
+  - ["sntp.server", "time.google.com"]
 
   - ["aws.shadow.enable", false]
 
-  - ["ds18b20.enable", true]
-  - ["ds18b20.pin", 4]
+  # Линия 1-Wire: все DS18B20 сидят на одном GPIO, подтяжка 4.7к к 3.3 V
+  - ["app.ds_pin", "i", 4, {title: "DS18B20 data GPIO (1-Wire bus)"}]
+  - ["app.ds_convert_ms", "i", 750, {title: "DS18B20 conversion wait, ms"}]
+
+  - ["app.fix_count", "i", 0, {title: "Config fix attempt counter"}]

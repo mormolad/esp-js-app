@@ -4,6 +4,7 @@
 #include "mgos_gpio.h"
 #include "mgos_http_server.h"
 #include "mgos_mqtt.h"
+#include "mgos_net.h"
 #include "mgos_sys_config.h"
 #include "mgos_system.h"
 #include "mgos_timers.h"
@@ -190,12 +191,123 @@ static void http_sensor_handler(struct mg_connection *c, int ev, void *ev_data, 
   app_http_reply(c, 200, body);
 }
 
-static void http_back_handler(struct mg_connection *c, int ev, void *ev_data, void *ud) {
+// ---------- helpers для формы настройки ----------
+
+static int hexval(char ch) {
+  if (ch >= '0' && ch <= '9') return ch - '0';
+  if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+  if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+  return -1;
+}
+
+// Достать поле из urlencoded-тела POST вида "k=v&k=v". Вернёт 1, если поле найдено.
+static int form_get(const struct mg_str *body, const char *key, char *out, size_t out_len) {
+  size_t klen = strlen(key), i = 0;
+  if (out_len == 0) return 0;
+  out[0] = '\0';
+  while (i + klen + 1 <= body->len) {
+    if ((i == 0 || body->p[i - 1] == '&') &&
+        memcmp(body->p + i, key, klen) == 0 && body->p[i + klen] == '=') {
+      i += klen + 1;
+      size_t o = 0;
+      while (i < body->len && body->p[i] != '&') {
+        char ch = body->p[i];
+        if (ch == '+') {
+          ch = ' ';
+        } else if (ch == '%' && i + 2 < body->len &&
+                   hexval(body->p[i + 1]) >= 0 && hexval(body->p[i + 2]) >= 0) {
+          ch = (char) (hexval(body->p[i + 1]) * 16 + hexval(body->p[i + 2]));
+          i += 2;
+        }
+        if (o + 1 < out_len) out[o++] = ch;
+        i++;
+      }
+      out[o] = '\0';
+      return 1;
+    }
+    i++;
+  }
+  return 0;
+}
+
+static void json_escape_str(const char *src, char *dst, size_t dst_len) {
+  size_t o = 0;
+  if (src == NULL) src = "";
+  for (size_t i = 0; src[i] != '\0' && o + 2 < dst_len; i++) {
+    unsigned char ch = (unsigned char) src[i];
+    if (ch == '"' || ch == '\\') { dst[o++] = '\\'; dst[o++] = (char) ch; }
+    else if (ch >= 0x20) dst[o++] = (char) ch;
+  }
+  dst[o] = '\0';
+}
+
+// Текущие настройки для подстановки в форму
+static void http_config_handler(struct mg_connection *c, int ev, void *ev_data, void *ud) {
+  (void) ud;
+  if (ev != MG_EV_HTTP_REQUEST) return;
+  if (!app_http_method_is(ev_data, "GET")) { app_http_reply(c, 405, "{\"ok\":false}"); return; }
+
+  static char ssid[80], pass[140], server[280], user[80], mpwd[140];
+  static char body[1024];
+  json_escape_str(mgos_sys_config_get_wifi_sta_ssid(), ssid, sizeof(ssid));
+  json_escape_str(mgos_sys_config_get_wifi_sta_pass(), pass, sizeof(pass));
+  json_escape_str(mgos_sys_config_get_mqtt_server(), server, sizeof(server));
+  json_escape_str(mgos_sys_config_get_mqtt_user(), user, sizeof(user));
+  json_escape_str(mgos_sys_config_get_mqtt_pass(), mpwd, sizeof(mpwd));
+
+  struct mgos_net_ip_info ninfo;
+  bool sta_connected = (mgos_net_get_ip_info(MGOS_NET_IF_TYPE_WIFI, 0, &ninfo) &&
+                        ninfo.ip.sin_addr.s_addr != 0);
+  char sta_ip[16] = "";
+  if (sta_connected) mgos_net_ip_to_str(&ninfo.ip, sta_ip);
+
+  snprintf(body, sizeof(body),
+           "{\"dev\":\"%s\",\"sta_ssid\":\"%s\",\"sta_pass\":\"%s\","
+           "\"mqtt_server\":\"%s\",\"mqtt_user\":\"%s\",\"mqtt_pass\":\"%s\","
+           "\"sta_on\":%d,\"ap_on\":%d,\"sta_connected\":%d,\"sta_ip\":\"%s\"}",
+           s_dev_id, ssid, pass, server, user, mpwd,
+           (int) mgos_sys_config_get_wifi_sta_enable(),
+           (int) mgos_sys_config_get_wifi_ap_enable(),
+           (int) sta_connected, sta_ip);
+  app_http_reply(c, 200, body);
+}
+
+// Сохранить настройки роутера и MQTT, перейти в режим STA и перезагрузиться
+static void http_setup_handler(struct mg_connection *c, int ev, void *ev_data, void *ud) {
   (void) ud;
   if (ev != MG_EV_HTTP_REQUEST) return;
   if (!app_http_method_is(ev_data, "POST")) { app_http_reply(c, 405, "{\"ok\":false}"); return; }
+  struct http_message *hm = (struct http_message *) ev_data;
+
+  char sta_ssid[33] = {0}, sta_pass[65] = {0};
+  char mqtt_server[129] = {0}, mqtt_user[33] = {0}, mqtt_pass[65] = {0};
+  form_get(&hm->body, "sta_ssid", sta_ssid, sizeof(sta_ssid));
+  form_get(&hm->body, "sta_pass", sta_pass, sizeof(sta_pass));
+  form_get(&hm->body, "mqtt_server", mqtt_server, sizeof(mqtt_server));
+  form_get(&hm->body, "mqtt_user", mqtt_user, sizeof(mqtt_user));
+  form_get(&hm->body, "mqtt_pass", mqtt_pass, sizeof(mqtt_pass));
+
+  if (sta_ssid[0] == '\0') {
+    app_http_reply(c, 400, "{\"ok\":false,\"error\":\"ssid required\"}");
+    return;
+  }
+
+  mgos_sys_config_set_wifi_sta_ssid(sta_ssid);
+  mgos_sys_config_set_wifi_sta_pass(sta_pass);
+  mgos_sys_config_set_mqtt_server(mqtt_server);
+  mgos_sys_config_set_mqtt_user(mqtt_user);
+  mgos_sys_config_set_mqtt_pass(mqtt_pass);
+  mgos_sys_config_set_mqtt_enable(mqtt_server[0] != '\0');
+  mgos_sys_config_set_wifi_sta_enable(true);
+  mgos_sys_config_set_wifi_ap_enable(false);
+
+  if (!mgos_sys_config_save(&mgos_sys_config, false, NULL)) {
+    app_http_reply(c, 500, "{\"ok\":false,\"error\":\"save failed\"}");
+    return;
+  }
   app_http_reply(c, 200, "{\"ok\":true}");
-  switch_wifi(true, false);
+  LOG(LL_INFO, ("Setup saved: sta_ssid='%s' mqtt='%s', rebooting", sta_ssid, mqtt_server));
+  mgos_system_restart_after(800);
 }
 
 // ============================================================
@@ -249,6 +361,44 @@ static void conn_state_tick_cb(void *arg) {
 }
 
 // ============================================================
+// 7b. Страж WiFi: нет IP у STA — поднимаем точку доступа для настройки
+// ============================================================
+#define WIFI_GUARD_INTERVAL_MS 60000
+static bool s_sta_had_ip = false;
+
+static void wifi_guard_cb(void *arg) {
+  (void) arg;
+
+  // Чистый режим настройки (AP без STA) — ничего делать не надо
+  if (!mgos_sys_config_get_wifi_sta_enable()) return;
+
+  struct mgos_net_ip_info info;
+  bool have_ip = (mgos_net_get_ip_info(MGOS_NET_IF_TYPE_WIFI, 0, &info) &&
+                  info.ip.sin_addr.s_addr != 0);
+
+  // Логируем только смену состояния, чтобы не спамить каждую минуту
+  if (have_ip && !s_sta_had_ip) {
+    char ip[16];
+    LOG(LL_INFO, ("STA connected, ip=%s", mgos_net_ip_to_str(&info.ip, ip)));
+  }
+  if (!have_ip && s_sta_had_ip) {
+    LOG(LL_WARN, ("STA connection lost"));
+  }
+  s_sta_had_ip = have_ip;
+  if (have_ip) return;
+
+  // Точка доступа уже поднята — настроиться можно, перезагрузка не нужна
+  if (mgos_sys_config_get_wifi_ap_enable()) return;
+
+  LOG(LL_WARN, ("STA has no IP, enabling setup AP (wifi '%s')",
+                mgos_sys_config_get_wifi_sta_ssid()));
+  mgos_sys_config_set_wifi_ap_enable(true);
+  if (mgos_sys_config_save(&mgos_sys_config, false, NULL)) {
+    mgos_system_restart_after(500);
+  }
+}
+
+// ============================================================
 // 8. init
 // ============================================================
 enum mgos_app_init_result mgos_app_init(void) {
@@ -271,7 +421,8 @@ enum mgos_app_init_result mgos_app_init(void) {
   }
 
   mgos_register_http_endpoint("/sensor", http_sensor_handler, NULL);
-  mgos_register_http_endpoint("/back",   http_back_handler,   NULL);
+  mgos_register_http_endpoint("/config", http_config_handler, NULL);
+  mgos_register_http_endpoint("/setup",  http_setup_handler,  NULL);
 
   char cmd_topic[80];
   snprintf(cmd_topic, sizeof(cmd_topic), "%s/cmd", s_base);
@@ -279,6 +430,11 @@ enum mgos_app_init_result mgos_app_init(void) {
 
   mgos_set_timer(5000, MGOS_TIMER_REPEAT, telemetry_tick_cb, NULL);
   mgos_set_timer(1000, MGOS_TIMER_REPEAT, conn_state_tick_cb, NULL);
+
+  // Если к роутеру не подключились (сразу после настройки или потеряли
+  // связь позже) — поднимем точку доступа, чтобы можно было
+  // посмотреть/поменять настройки; STA при этом продолжает попытки
+  mgos_set_timer(WIFI_GUARD_INTERVAL_MS, MGOS_TIMER_REPEAT, wifi_guard_cb, NULL);
 
   LOG(LL_INFO, ("Ready: devId=%s", s_dev_id));
   return MGOS_APP_INIT_SUCCESS;

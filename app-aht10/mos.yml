@@ -1,5 +1,5 @@
 author: mongoose-os
-description: AHT10 + MQTT (C)
+description: AHT10 + MQTT (C), настройка WiFi/MQTT через WiFi AP
 version: 1.0
 manifest_version: 2017-09-29
 
@@ -25,18 +25,19 @@ libs:
   - origin: https://github.com/mongoose-os-libs/bme280
 
 config_schema:
-  - ["wifi.sta.enable", true]
-  - ["wifi.sta.ssid", "A33"]
-  - ["wifi.sta.pass", "11111112"]
-  - ["wifi.ap.enable", false]
-  - ["wifi.ap.ssid", "bme280"]
-  - ["wifi.ap.pass", "bme280"]
+  # Свежее устройство поднимает только точку доступа.
+  # Параметры роутера и MQTT задаются с веб-страницы 192.168.4.1 и сохраняются в flash.
+  - ["wifi.sta.enable", false]
+  - ["wifi.ap.enable", true]
+  - ["wifi.ap.ssid", "aht10"]
+  - ["wifi.ap.pass", ""]
   - ["http.index_files", "index.html"]
+  - ["http.max_request_size", 4096]
 
-  - ["mqtt.enable", true]
-  - ["mqtt.server", "tcp://89.125.28.27:1883"]
-  - ["mqtt.user", "temphum"]
-  - ["mqtt.pass", "cto8bp6f+CTO8BP6F"]
+  - ["mqtt.enable", false]
+  - ["mqtt.server", ""]
+  - ["mqtt.user", ""]
+  - ["mqtt.pass", ""]
   - ["mqtt.reconnect_timeout_min", 5]
   - ["mqtt.reconnect_timeout_max", 60]
   - ["mqtt.max_qos", 1]
