@@ -13,7 +13,6 @@
       --border: #24314d;
       --text: #e8eefc;
       --muted: #8ea0c0;
-      --accent: #38bdf8;
       --ok: #34d399;
       --warn: #fbbf24;
       --err: #f87171;
@@ -45,6 +44,7 @@
     }
     .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
     .hint { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .hint b { color: var(--text); font-weight: 600; }
 
     /* ---------- индикатор текущего пина ---------- */
     .now {
@@ -81,7 +81,33 @@
     }
     .pin-btn small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); margin-top: 2px; }
     .pin-btn.active { border-color: var(--ok); color: var(--ok); }
+    .pin-btn.risky { border-color: rgba(251, 191, 36, .45); }
+    .pin-btn.risky.active { border-color: var(--err); color: var(--err); }
     #log { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); margin-top: 12px; min-height: 1em; }
+
+    /* ---------- переключатель опасных пинов ---------- */
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 12px; border: 1px solid rgba(251, 191, 36, .35);
+      background: rgba(251, 191, 36, .06); border-radius: 12px; margin-bottom: 12px;
+    }
+    .toggle-row .txt { font-size: 13px; }
+    .toggle-row .txt b { color: var(--warn); }
+    .switch { position: relative; width: 46px; height: 26px; flex-shrink: 0; cursor: pointer; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; border-radius: 999px;
+      background: #2a3854; transition: background .2s;
+    }
+    .slider::before {
+      content: ""; position: absolute; width: 20px; height: 20px; border-radius: 50%;
+      left: 3px; top: 3px; background: #fff; transition: transform .2s;
+    }
+    .switch input:checked + .slider { background: var(--warn); }
+    .switch input:checked + .slider::before { transform: translateX(20px); }
+    #riskyGroup { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+    #riskyGroup.on { display: block; }
+    #riskyGroup h3 { font-size: 13px; color: var(--warn); margin-bottom: 8px; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -93,7 +119,7 @@
 
     <div class="card">
       <h2>Авто-сканирование</h2>
-      <div class="hint">Устройство по очереди подаёт HIGH на каждый пин на 1.5 с.
+      <div class="hint">Устройство по очереди даёт импульс на каждый пин (1.5 с).
         Следите за реле: когда щёлкнет — смотрите, какой сейчас GPIO.</div>
       <div class="now">
         <div class="gpio" id="gpio">— <small>GPIO</small></div>
@@ -108,7 +134,7 @@
 
     <div class="card">
       <h2>Ручной импульс</h2>
-      <div class="hint">Кнопка — щелчок одного реле (HIGH на 0.8 с).</div>
+      <div class="hint">Кнопка — один щелчок реле (0.8 с).</div>
       <div class="pins">
         <button class="pin-btn" data-pin="4"  type="button">GPIO 4<small>импульс</small></button>
         <button class="pin-btn" data-pin="5"  type="button">GPIO 5<small>импульс</small></button>
@@ -117,13 +143,42 @@
         <button class="pin-btn" data-pin="14" type="button">GPIO 14<small>импульс</small></button>
         <button class="pin-btn" data-pin="16" type="button">GPIO 16<small>импульс</small></button>
       </div>
+
+      <div class="toggle-row">
+        <div class="txt"><b>Опасные пины</b><br>GPIO 15, 0, 2, 1, 3 — кандидаты для «невидимого» реле</div>
+        <label class="switch">
+          <input type="checkbox" id="riskyToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="hint">
+        <b>GPIO 15</b> — безопасен: при загрузке как раз нужен LOW. Частый пин реле.<br>
+        <b>GPIO 0, 2</b> — стрэппинг загрузки: покой держится HIGH, иначе модуль может не стартовать.
+        Если 4-е реле окажется здесь — лучше перекинуть его на свободный 4/5/13/16.<br>
+        <b>GPIO 1, 3</b> — UART: во время импульса консоль мусорит, для прошивки по USB реле с этих пинов отключите.
+      </div>
+
+      <div id="riskyGroup">
+        <h3>Опасные пины (включены)</h3>
+        <div class="pins">
+          <button class="pin-btn risky" data-pin="15" type="button">GPIO 15<small>страп · LOW покой</small></button>
+          <button class="pin-btn risky" data-pin="0"  type="button">GPIO 0<small>страп · HIGH покой</small></button>
+          <button class="pin-btn risky" data-pin="2"  type="button">GPIO 2<small>страп · HIGH покой</small></button>
+          <button class="pin-btn risky" data-pin="1"  type="button">GPIO 1<small>UART TX</small></button>
+          <button class="pin-btn risky" data-pin="3"  type="button">GPIO 3<small>UART RX</small></button>
+        </div>
+      </div>
       <div id="log"></div>
     </div>
   </div>
 
   <script>
-    function post(url) {
-      return fetch(url, { method: 'POST' }).then(function(res) { return res.json(); });
+    function post(url, body) {
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body || ''
+      }).then(function(res) { return res.json(); });
     }
 
     function poll() {
@@ -131,7 +186,7 @@
         var gpioEl = document.getElementById('gpio');
         var dot = document.getElementById('dot');
         var state = document.getElementById('state');
-        if (s.running && s.pin > 0) {
+        if (s.running && s.pin > -1) {
           gpioEl.innerHTML = s.pin + ' <small>GPIO</small>';
           dot.className = 'dot on';
           state.textContent = 'сканирую… цикл ' + s.cycle + ' — какое реле щёлкнуло?';
@@ -142,6 +197,9 @@
         }
         document.getElementById('btnStart').disabled = !!s.running;
         document.getElementById('btnStop').disabled = !s.running;
+        var t = document.getElementById('riskyToggle');
+        if (t.checked !== !!s.risky) t.checked = !!s.risky;
+        document.getElementById('riskyGroup').className = s.risky ? 'on' : '';
       }).catch(function() {});
     }
     poll();
@@ -150,18 +208,18 @@
     document.getElementById('btnStart').onclick = function() { post('/start'); poll(); };
     document.getElementById('btnStop').onclick = function() { post('/stop'); poll(); };
 
+    document.getElementById('riskyToggle').onchange = function() {
+      post('/risky', 'on=' + (this.checked ? 1 : 0)).then(function() { poll(); });
+    };
+
     Array.prototype.forEach.call(document.querySelectorAll('.pin-btn'), function(btn) {
       btn.onclick = function() {
         var pin = btn.getAttribute('data-pin');
-        fetch('/pulse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: 'pin=' + pin
-        }).then(function(res) { return res.json(); }).then(function(r) {
+        post('/pulse', 'pin=' + pin).then(function(r) {
           var log = document.getElementById('log');
           log.textContent = r.ok
             ? 'импульс на GPIO ' + r.pin
-            : 'ошибка: ' + (r.error || '?');
+            : 'ошибка: ' + (r.error || '?') + ' (включите опасные пины для 15/0/2/1/3)';
         }).catch(function() {});
       };
     });
