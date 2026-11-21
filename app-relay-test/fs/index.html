@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>Тестер реле — ESP8266</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --bg-glow: rgba(56, 130, 246, 0.18);
+      --card: #131c2e;
+      --border: #24314d;
+      --text: #e8eefc;
+      --muted: #8ea0c0;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --err: #f87171;
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background:
+        radial-gradient(1200px 500px at 80% -10%, var(--bg-glow), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+      line-height: 1.45;
+    }
+    .wrap { max-width: 460px; margin: 0 auto; }
+    header { margin-bottom: 14px; }
+    h1 { font-size: 22px; font-weight: 700; }
+    .muted { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+    .card {
+      background: linear-gradient(180deg, var(--card), #101827);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .hint { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .hint b { color: var(--text); font-weight: 600; }
+
+    /* ---------- индикатор текущего пина ---------- */
+    .now {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin-bottom: 14px;
+    }
+    .now .gpio { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .now .gpio small { font-size: 15px; color: var(--muted); font-weight: 500; }
+    .dot {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #2a3854; transition: background .15s, box-shadow .15s;
+    }
+    .dot.on { background: var(--ok); box-shadow: 0 0 14px rgba(52, 211, 153, .8); }
+    .state { font-size: 13px; color: var(--muted); }
+
+    .row { display: flex; gap: 10px; }
+    button {
+      flex: 1; padding: 12px 16px; border: 0; border-radius: 12px;
+      font-size: 15px; font-weight: 600; color: #fff; cursor: pointer;
+      transition: filter .2s, transform .1s;
+    }
+    button:hover { filter: brightness(1.1); }
+    button:active { transform: translateY(1px); }
+    button:disabled { filter: grayscale(.6); opacity: .5; cursor: default; }
+    .btn-go { background: linear-gradient(135deg, #059669, #34d399); }
+    .btn-stop { background: linear-gradient(135deg, #dc2626, #f87171); }
+
+    /* ---------- ручные импульсы ---------- */
+    .pins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .pin-btn {
+      padding: 14px 8px; font-size: 16px; font-weight: 700;
+      background: #1a2740; color: var(--text);
+      border: 1px solid var(--border); border-radius: 12px;
+    }
+    .pin-btn small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); margin-top: 2px; }
+    .pin-btn.active { border-color: var(--ok); color: var(--ok); }
+    .pin-btn.risky { border-color: rgba(251, 191, 36, .45); }
+    .pin-btn.risky.active { border-color: var(--err); color: var(--err); }
+    #log { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); margin-top: 12px; min-height: 1em; }
+
+    /* ---------- переключатель опасных пинов ---------- */
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 12px; border: 1px solid rgba(251, 191, 36, .35);
+      background: rgba(251, 191, 36, .06); border-radius: 12px; margin-bottom: 12px;
+    }
+    .toggle-row .txt { font-size: 13px; }
+    .toggle-row .txt b { color: var(--warn); }
+    .switch { position: relative; width: 46px; height: 26px; flex-shrink: 0; cursor: pointer; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; border-radius: 999px;
+      background: #2a3854; transition: background .2s;
+    }
+    .slider::before {
+      content: ""; position: absolute; width: 20px; height: 20px; border-radius: 50%;
+      left: 3px; top: 3px; background: #fff; transition: transform .2s;
+    }
+    .switch input:checked + .slider { background: var(--warn); }
+    .switch input:checked + .slider::before { transform: translateX(20px); }
+    #riskyGroup { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+    #riskyGroup.on { display: block; }
+    #riskyGroup h3 { font-size: 13px; color: var(--warn); margin-bottom: 8px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Тестер реле</h1>
+      <div class="muted">ESP8266 · сеть <b>relay-test</b> · 192.168.4.1</div>
+    </header>
+
+    <div class="card">
+      <h2>Авто-сканирование</h2>
+      <div class="hint">Устройство по очереди даёт импульс на каждый пин (1.5 с).
+        Следите за реле: когда щёлкнет — смотрите, какой сейчас GPIO.</div>
+      <div class="now">
+        <div class="gpio" id="gpio">— <small>GPIO</small></div>
+        <div class="dot" id="dot"></div>
+      </div>
+      <div class="state" id="state">остановлено</div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn-go" id="btnStart" type="button">Старт</button>
+        <button class="btn-stop" id="btnStop" type="button">Стоп</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Ручной импульс</h2>
+      <div class="hint">Кнопка — один щелчок реле (0.8 с).</div>
+      <div class="pins">
+        <button class="pin-btn" data-pin="4"  type="button">GPIO 4<small>импульс</small></button>
+        <button class="pin-btn" data-pin="5"  type="button">GPIO 5<small>импульс</small></button>
+        <button class="pin-btn" data-pin="12" type="button">GPIO 12<small>импульс</small></button>
+        <button class="pin-btn" data-pin="13" type="button">GPIO 13<small>импульс</small></button>
+        <button class="pin-btn" data-pin="14" type="button">GPIO 14<small>импульс</small></button>
+        <button class="pin-btn" data-pin="16" type="button">GPIO 16<small>импульс</small></button>
+      </div>
+
+      <div class="toggle-row">
+        <div class="txt"><b>Опасные пины</b><br>GPIO 15, 0, 2, 1, 3 — кандидаты для «невидимого» реле</div>
+        <label class="switch">
+          <input type="checkbox" id="riskyToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="hint">
+        <b>GPIO 15</b> — безопасен: при загрузке как раз нужен LOW. Частый пин реле.<br>
+        <b>GPIO 0, 2</b> — стрэппинг загрузки: покой держится HIGH, иначе модуль может не стартовать.
+        Если 4-е реле окажется здесь — лучше перекинуть его на свободный 4/5/13/16.<br>
+        <b>GPIO 1, 3</b> — UART: во время импульса консоль мусорит, для прошивки по USB реле с этих пинов отключите.
+      </div>
+
+      <div id="riskyGroup">
+        <h3>Опасные пины (включены)</h3>
+        <div class="pins">
+          <button class="pin-btn risky" data-pin="15" type="button">GPIO 15<small>страп · LOW покой</small></button>
+          <button class="pin-btn risky" data-pin="0"  type="button">GPIO 0<small>страп · HIGH покой</small></button>
+          <button class="pin-btn risky" data-pin="2"  type="button">GPIO 2<small>страп · HIGH покой</small></button>
+          <button class="pin-btn risky" data-pin="1"  type="button">GPIO 1<small>UART TX</small></button>
+          <button class="pin-btn risky" data-pin="3"  type="button">GPIO 3<small>UART RX</small></button>
+        </div>
+      </div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    function post(url, body) {
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body || ''
+      }).then(function(res) { return res.json(); });
+    }
+
+    function poll() {
+      fetch('/status').then(function(res) { return res.json(); }).then(function(s) {
+        var gpioEl = document.getElementById('gpio');
+        var dot = document.getElementById('dot');
+        var state = document.getElementById('state');
+        if (s.running && s.pin > -1) {
+          gpioEl.innerHTML = s.pin + ' <small>GPIO</small>';
+          dot.className = 'dot on';
+          state.textContent = 'сканирую… цикл ' + s.cycle + ' — какое реле щёлкнуло?';
+        } else {
+          gpioEl.innerHTML = '— <small>GPIO</small>';
+          dot.className = 'dot';
+          state.textContent = s.running ? 'сканирую…' : 'остановлено';
+        }
+        document.getElementById('btnStart').disabled = !!s.running;
+        document.getElementById('btnStop').disabled = !s.running;
+        var t = document.getElementById('riskyToggle');
+        if (t.checked !== !!s.risky) t.checked = !!s.risky;
+        document.getElementById('riskyGroup').className = s.risky ? 'on' : '';
+      }).catch(function() {});
+    }
+    poll();
+    setInterval(poll, 500);
+
+    document.getElementById('btnStart').onclick = function() { post('/start'); poll(); };
+    document.getElementById('btnStop').onclick = function() { post('/stop'); poll(); };
+
+    document.getElementById('riskyToggle').onchange = function() {
+      post('/risky', 'on=' + (this.checked ? 1 : 0)).then(function() { poll(); });
+    };
+
+    Array.prototype.forEach.call(document.querySelectorAll('.pin-btn'), function(btn) {
+      btn.onclick = function() {
+        var pin = btn.getAttribute('data-pin');
+        post('/pulse', 'pin=' + pin).then(function(r) {
+          var log = document.getElementById('log');
+          log.textContent = r.ok
+            ? 'импульс на GPIO ' + r.pin
+            : 'ошибка: ' + (r.error || '?') + ' (включите опасные пины для 15/0/2/1/3)';
+        }).catch(function() {});
+      };
+    });
+  </script>
+</body>
+</html>

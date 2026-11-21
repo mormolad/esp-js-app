@@ -1,0 +1,58 @@
+author: mongoose-os
+description: 4 реле (GPIO 12/13/14/15, active-high) + MQTT (C), настройка WiFi/MQTT через WiFi AP
+version: 1.0
+arch: esp8266
+manifest_version: 2017-09-29
+
+libs_version: ${mos.version}
+modules_version: ${mos.version}
+mongoose_os_version: ${mos.version}
+
+sources:
+  - src
+
+filesystem:
+  - fs
+
+libs:
+  - origin: https://github.com/mongoose-os-libs/boards
+  - origin: https://github.com/mongoose-os-libs/ca-bundle
+  - origin: https://github.com/mongoose-os-libs/http-server
+  - origin: https://github.com/mongoose-os-libs/mqtt
+  - origin: https://github.com/mongoose-os-libs/rpc-service-config
+  - origin: https://github.com/mongoose-os-libs/rpc-service-fs
+  - origin: https://github.com/mongoose-os-libs/rpc-uart
+
+config_schema:
+  # Свежее устройство поднимает только точку доступа.
+  # Параметры роутера и MQTT задаются с веб-страницы 192.168.4.1 и сохраняются в flash.
+  - ["wifi.sta.enable", false]
+  - ["wifi.ap.enable", true]
+  - ["wifi.ap.ssid", "relays"]
+  - ["wifi.ap.pass", ""]
+  - ["http.index_files", "index.html"]
+  - ["http.max_request_size", 4096]
+
+  - ["mqtt.enable", false]
+  - ["mqtt.server", ""]
+  - ["mqtt.user", ""]
+  - ["mqtt.pass", ""]
+  - ["mqtt.reconnect_timeout_min", 5]
+  - ["mqtt.reconnect_timeout_max", 60]
+  - ["mqtt.max_qos", 1]
+
+  - ["sntp.enable", true]
+  - ["sntp.server", "time.google.com"]
+
+  - ["aws.shadow.enable", false]
+
+  # Реле: пины, активный уровень (true = HIGH включает), восстановление состояния
+  - ["app.r1_pin", "i", 12, {title: "Relay r1 GPIO"}]
+  - ["app.r2_pin", "i", 13, {title: "Relay r2 GPIO"}]
+  - ["app.r3_pin", "i", 14, {title: "Relay r3 GPIO"}]
+  - ["app.r4_pin", "i", 15, {title: "Relay r4 GPIO"}]
+  - ["app.relay_active_high", "b", true, {title: "HIGH level turns relay on"}]
+  - ["app.relay_restore", "b", true, {title: "Restore relay states after reboot"}]
+  - ["app.relay_states", "i", 0, {title: "Last relay states (bitmask r1=1..r4=8)"}]
+
+  - ["app.fix_count", "i", 0, {title: "Config fix attempt counter"}]

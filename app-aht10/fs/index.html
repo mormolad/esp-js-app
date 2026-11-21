@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AHT10 — настройка</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px auto; max-width: 420px; background: #111; color: #eee; }
+    h1 { font-size: 20px; font-weight: 600; }
+    p { color: #aaa; font-size: 14px; }
+    .row { margin: 4px 0; color: #aaa; }
+    .val { font-size: 32px; color: #eee; }
+    label { display: block; margin: 14px 0 4px; color: #aaa; font-size: 14px; }
+    input { width: 100%; box-sizing: border-box; font-size: 16px; padding: 10px; background: #1d1d1d; color: #eee; border: 1px solid #444; border-radius: 4px; }
+    button { font-size: 18px; padding: 12px 16px; margin-top: 18px; width: 100%; }
+    #status { min-height: 1.2em; color: #6f6; }
+    #status.err { color: #f66; }
+  </style>
+</head>
+<body>
+  <h1>AHT10 — настройка</h1>
+  <p>Устройство работает как точка доступа <b>aht10</b> (адрес 192.168.4.1).
+     Укажите параметры роутера и MQTT, сохраните — устройство перезагрузится
+     и подключится к роутеру. Если подключиться не получится, точка доступа
+     поднимется снова — настройки можно будет посмотреть и поправить.</p>
+  <p id="mode"></p>
+
+  <div class="row">Температура: <span class="val" id="t">—</span> °C</div>
+  <div class="row">Влажность: <span class="val" id="h">—</span> %</div>
+
+  <form id="f" autocomplete="off">
+    <label for="sta_ssid">Сеть роутера (SSID)</label>
+    <input id="sta_ssid" name="sta_ssid" required maxlength="32">
+    <label for="sta_pass">Пароль роутера</label>
+    <input id="sta_pass" name="sta_pass" type="password" maxlength="63">
+    <label for="mqtt_server">MQTT-сервер (tcp://адрес:порт)</label>
+    <input id="mqtt_server" name="mqtt_server" maxlength="127" placeholder="tcp://192.168.1.10:1883">
+    <label for="mqtt_user">MQTT пользователь</label>
+    <input id="mqtt_user" name="mqtt_user" maxlength="32">
+    <label for="mqtt_pass">MQTT пароль</label>
+    <input id="mqtt_pass" name="mqtt_pass" type="password" maxlength="63">
+    <button type="submit">Сохранить и перезагрузить</button>
+  </form>
+  <p id="status"></p>
+
+  <script>
+    function setText(id, v) {
+      var el = document.getElementById(id);
+      if (v === null || v === undefined || v !== v) { el.textContent = '—'; return; }
+      el.textContent = Number(v).toFixed(1);
+    }
+
+    function poll() {
+      fetch('/sensor').then(function(res) { return res.json(); }).then(function(data) {
+        setText('t', data.sensors && data.sensors.t1);
+        setText('h', data.sensors && data.sensors.h1);
+      }).catch(function() {});
+    }
+    poll();
+    setInterval(poll, 3000);
+
+    var cfgFirstLoad = true;
+
+    function applyCfg(cfg) {
+      // Поля заполняем только при первой загрузке, чтобы не затирать ввод
+      if (cfgFirstLoad) {
+        cfgFirstLoad = false;
+        document.getElementById('sta_ssid').value = cfg.sta_ssid || '';
+        document.getElementById('sta_pass').value = cfg.sta_pass || '';
+        document.getElementById('mqtt_server').value = cfg.mqtt_server || '';
+        document.getElementById('mqtt_user').value = cfg.mqtt_user || '';
+        document.getElementById('mqtt_pass').value = cfg.mqtt_pass || '';
+      }
+      var m = document.getElementById('mode');
+      if (cfg.sta_connected) {
+        m.textContent = 'Статус: подключено к роутеру, IP ' + cfg.sta_ip;
+      } else if (cfg.sta_on && cfg.ap_on) {
+        m.textContent = 'Статус: к роутеру не подключено — точка доступа поднята, поправьте настройки и сохраните снова';
+      } else if (cfg.ap_on) {
+        m.textContent = 'Статус: режим настройки (точка доступа)';
+      } else {
+        m.textContent = 'Статус: подключение к роутеру...';
+      }
+    }
+
+    function pollCfg() {
+      fetch('/config').then(function(res) { return res.json(); }).then(applyCfg).catch(function() {});
+    }
+    pollCfg();
+    setInterval(pollCfg, 10000);
+
+    document.getElementById('f').onsubmit = function(e) {
+      e.preventDefault();
+      var s = document.getElementById('status');
+      s.className = '';
+      s.textContent = 'Сохранение...';
+      var body = new URLSearchParams(new FormData(document.getElementById('f')));
+      fetch('/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      }).then(function(res) { return res.json(); }).then(function(r) {
+        if (r.ok) {
+          s.textContent = 'Сохранено. Устройство перезагружается — подключитесь к своему роутеру.';
+        } else {
+          s.className = 'err';
+          s.textContent = 'Ошибка: ' + (r.error || 'неизвестная');
+        }
+      }).catch(function() {
+        s.className = 'err';
+        s.textContent = 'Нет ответа (устройство уже перезагружается?)';
+      });
+      return false;
+    };
+  </script>
+</body>
+</html>

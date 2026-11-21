@@ -1,0 +1,55 @@
+author: mongoose-os
+description: BME280 + MQTT (C), настройка WiFi/MQTT через WiFi AP
+version: 1.0
+arch: esp32
+manifest_version: 2017-09-29
+
+libs_version: ${mos.version}
+modules_version: ${mos.version}
+mongoose_os_version: ${mos.version}
+
+sources:
+  - src
+
+filesystem:
+  - fs
+
+libs:
+  - origin: https://github.com/mongoose-os-libs/boards
+  - origin: https://github.com/mongoose-os-libs/ca-bundle
+  - origin: https://github.com/mongoose-os-libs/http-server
+  - origin: https://github.com/mongoose-os-libs/mqtt
+  - origin: https://github.com/mongoose-os-libs/rpc-service-config
+  - origin: https://github.com/mongoose-os-libs/rpc-service-fs
+  - origin: https://github.com/mongoose-os-libs/rpc-uart
+  - origin: https://github.com/mongoose-os-libs/i2c
+  - origin: https://github.com/mongoose-os-libs/bme280
+
+config_schema:
+  # Свежее устройство поднимает только точку доступа.
+  # Параметры роутера и MQTT задаются с веб-страницы 192.168.4.1 и сохраняются в flash.
+  - ["wifi.sta.enable", false]
+  - ["wifi.ap.enable", true]
+  - ["wifi.ap.ssid", "bme280"]
+  - ["wifi.ap.pass", ""]
+  - ["http.index_files", "index.html"]
+  - ["http.max_request_size", 4096]
+
+  - ["mqtt.enable", false]
+  - ["mqtt.server", ""]
+  - ["mqtt.user", ""]
+  - ["mqtt.pass", ""]
+  - ["mqtt.reconnect_timeout_min", 5]
+  - ["mqtt.reconnect_timeout_max", 60]
+  - ["mqtt.max_qos", 1]
+
+  - ["sntp.enable", true]
+  - ["sntp.server", "time.google.com"]
+
+  - ["aws.shadow.enable", false]
+
+  - ["i2c.enable", true]
+  - ["i2c.sda_gpio", 21]
+  - ["i2c.scl_gpio", 22]
+
+  - ["app.fix_count", "i", 0, {title: "Config fix attempt counter"}]
